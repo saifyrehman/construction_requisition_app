@@ -5,7 +5,7 @@ pip install --upgrade pip setuptools wheel
 
 # Install each package explicitly
 pip install streamlit
-pip install streamlit-option-menu
+pip install streamlit-option-menu==0.1.2
 pip install streamlit-aggrid
 pip install pandas numpy plotly
 pip install bcrypt fuzzywuzzy python-Levenshtein
