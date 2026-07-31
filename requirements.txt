@@ -1,5 +1,5 @@
 streamlit
-streamlit-option-menu
+streamlit-option-menu==0.1.2
 streamlit-aggrid
 pandas
 numpy
