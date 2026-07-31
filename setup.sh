@@ -1,7 +1,13 @@
 #!/bin/bash
 
-# Install Python dependencies
+# Upgrade pip
+pip install --upgrade pip
+
+# Install all dependencies
 pip install -r requirements.txt
+
+# Force reinstall streamlit-option-menu
+pip install --no-cache-dir streamlit-option-menu
 
 # Create necessary directories
 mkdir -p static
