@@ -13,14 +13,14 @@ dependencies:
   - plotly=5.18.0
   - pillow=10.1.0
   - pip:
-    - streamlit==1.28.2
-    - streamlit-option-menu==0.3.6
-    - st-aggrid==0.3.3
-    - bcrypt==4.0.1
-    - fuzzywuzzy==0.18.0
-    - python-Levenshtein==0.21.1
-    - reportlab==4.0.7
-    - jinja2==3.1.2
-    - python-dotenv==1.0.0
-    - pydantic==2.4.2
-    - pyjwt==2.8.0
+    - streamlit
+    - streamlit-option-menu
+    - st-aggrid
+    - bcrypt
+    - fuzzywuzzy
+    - python-Levenshtein
+    - reportlab
+    - jinja2
+    - python-dotenv
+    - pydantic
+    - pyjwt
