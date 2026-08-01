@@ -1,8 +1,9 @@
+# modules/admin.py - Complete fixed version
+
 import streamlit as st
 import pandas as pd
 from database import get_db_connection
 from auth import hash_password
-
 def show_admin():
     user = st.session_state.auth["user"]
     
@@ -14,26 +15,42 @@ def show_admin():
     
     tabs = st.tabs(["👥 Users", "📦 Master Items", "🏷️ Categories"])
     
+    # ==================== USERS TAB ====================
     with tabs[0]:
         st.markdown("### User Management")
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users ORDER BY created_at")
+        
+        # Check if is_active column exists in users table
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_is_active = 'is_active' in columns
+        
+        if has_is_active:
+            cursor.execute("SELECT * FROM users ORDER BY created_at")
+        else:
+            cursor.execute("SELECT id, username, email, full_name, role, created_at, last_login FROM users ORDER BY created_at")
+        
         users = cursor.fetchall()
         conn.close()
         
         if users:
             user_data = []
             for u in users:
-                user_data.append({
+                row = {
                     "ID": u['id'],
                     "Username": u['username'],
                     "Full Name": u['full_name'],
                     "Email": u['email'],
                     "Role": u['role'],
-                    "Status": "Active" if u['is_active'] else "Inactive"
-                })
+                }
+                if has_is_active:
+                    row["Status"] = "Active" if u['is_active'] else "Inactive"
+                else:
+                    row["Status"] = "Active"
+                user_data.append(row)
+            
             df = pd.DataFrame(user_data)
             st.dataframe(df, use_container_width=True, hide_index=True)
         
@@ -55,10 +72,23 @@ def show_admin():
                         conn = get_db_connection()
                         cursor = conn.cursor()
                         hashed = hash_password(password)
-                        cursor.execute('''
-                        INSERT INTO users (username, email, full_name, hashed_password, role, is_active)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (username, email, full_name, hashed, role, 1 if is_active else 0))
+                        
+                        # Check if is_active column exists
+                        cursor.execute("PRAGMA table_info(users)")
+                        columns = [col[1] for col in cursor.fetchall()]
+                        has_is_active = 'is_active' in columns
+                        
+                        if has_is_active:
+                            cursor.execute('''
+                            INSERT INTO users (username, email, full_name, hashed_password, role, is_active)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (username, email, full_name, hashed, role, 1 if is_active else 0))
+                        else:
+                            cursor.execute('''
+                            INSERT INTO users (username, email, full_name, hashed_password, role)
+                            VALUES (?, ?, ?, ?, ?)
+                            ''', (username, email, full_name, hashed, role))
+                        
                         conn.commit()
                         conn.close()
                         st.success(f"✅ User '{username}' created!")
@@ -66,31 +96,58 @@ def show_admin():
                     except Exception as e:
                         st.error(f"Error creating user: {e}")
     
+    # ==================== MASTER ITEMS TAB ====================
     with tabs[1]:
         st.markdown("### Master Items")
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM categories WHERE is_active = 1")
+        
+        # Check if is_active column exists in categories
+        cursor.execute("PRAGMA table_info(categories)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_is_active = 'is_active' in columns
+        
+        if has_is_active:
+            cursor.execute("SELECT id, name FROM categories WHERE is_active = 1")
+        else:
+            cursor.execute("SELECT id, name FROM categories")
+        
         categories = cursor.fetchall()
         conn.close()
         
-        cat_options = {c[1]: c[0] for c in categories}
-        cat_options["All"] = None
+        cat_options = {c['name']: c['id'] for c in categories}
+        cat_options["All Categories"] = None
         
         selected_cat = st.selectbox("Filter by Category", list(cat_options.keys()))
         search = st.text_input("Search Items", placeholder="Type to search...")
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        query = "SELECT * FROM master_items WHERE is_active = 1"
+        
+        # Check if is_active column exists in master_items
+        cursor.execute("PRAGMA table_info(master_items)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_is_active = 'is_active' in columns
+        
+        query = "SELECT * FROM master_items"
         params = []
-        if cat_options[selected_cat]:
-            query += " AND category_id = ?"
+        conditions = []
+        
+        if has_is_active:
+            conditions.append("is_active = 1")
+        
+        if selected_cat != "All Categories":
+            conditions.append("category_id = ?")
             params.append(cat_options[selected_cat])
+        
         if search:
-            query += " AND canonical_name LIKE ?"
+            conditions.append("canonical_name LIKE ?")
             params.append(f"%{search}%")
+        
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        
         query += " ORDER BY canonical_name"
         
         cursor.execute(query, params)
@@ -100,7 +157,7 @@ def show_admin():
         if items:
             item_data = []
             for item in items:
-                cat_name = next((c[1] for c in categories if c[0] == item['category_id']), "Uncategorized")
+                cat_name = next((c['name'] for c in categories if c['id'] == item['category_id']), "Uncategorized")
                 item_data.append({
                     "ID": item['id'],
                     "Name": item['canonical_name'],
@@ -112,9 +169,35 @@ def show_admin():
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("No master items found")
+        
+        # Add new master item
+        with st.expander("➕ Add New Master Item", expanded=False):
+            with st.form("add_master_item_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    item_name = st.text_input("Item Name*")
+                    cat_choice = st.selectbox("Category", list(cat_options.keys()) if len(cat_options) > 1 else ["No categories"])
+                with col2:
+                    unit = st.text_input("Unit (e.g., kg, m, pcs)")
+                    aliases = st.text_input("Aliases (comma separated)")
+                
+                submitted = st.form_submit_button("Add Item", use_container_width=True)
+                if submitted and item_name and cat_choice != "All Categories" and cat_choice != "No categories":
+                    try:
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                        INSERT INTO master_items (canonical_name, category_id, unit, aliases, is_active)
+                        VALUES (?, ?, ?, ?, ?)
+                        ''', (item_name, cat_options[cat_choice], unit, aliases, 1))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ Item '{item_name}' added!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error adding item: {e}")
     
-    # In modules/admin.py - Replace the Categories tab section
-
+    # ==================== CATEGORIES TAB ====================
     with tabs[2]:
         st.markdown("### Categories Management")
         
@@ -141,10 +224,20 @@ def show_admin():
                             cursor.execute("PRAGMA table_info(categories)")
                             columns = [col[1] for col in cursor.fetchall()]
                             
-                            if 'status' in columns:
+                            if 'status' in columns and 'is_active' in columns:
+                                cursor.execute(
+                                    "INSERT INTO categories (name, sort_order, status, is_active) VALUES (?, ?, ?, ?)",
+                                    (cat_name, sort_order, 'Active', 1)
+                                )
+                            elif 'status' in columns:
                                 cursor.execute(
                                     "INSERT INTO categories (name, sort_order, status) VALUES (?, ?, ?)",
                                     (cat_name, sort_order, 'Active')
+                                )
+                            elif 'is_active' in columns:
+                                cursor.execute(
+                                    "INSERT INTO categories (name, sort_order, is_active) VALUES (?, ?, ?)",
+                                    (cat_name, sort_order, 1)
                                 )
                             else:
                                 cursor.execute(
@@ -164,16 +257,20 @@ def show_admin():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if status column exists
+        # Check available columns
         cursor.execute("PRAGMA table_info(categories)")
         columns = [col[1] for col in cursor.fetchall()]
         has_status = 'status' in columns
+        has_is_active = 'is_active' in columns
         
+        # Build SELECT query based on available columns
+        select_cols = ['id', 'name', 'sort_order']
         if has_status:
-            cursor.execute("SELECT * FROM categories ORDER BY sort_order, name")
-        else:
-            cursor.execute("SELECT id, name, sort_order FROM categories ORDER BY sort_order, name")
+            select_cols.append('status')
+        if has_is_active:
+            select_cols.append('is_active')
         
+        cursor.execute(f"SELECT {', '.join(select_cols)} FROM categories ORDER BY sort_order, name")
         categories = cursor.fetchall()
         conn.close()
         
@@ -188,10 +285,14 @@ def show_admin():
                     
                     with col2:
                         st.write(f"Sort Order: {cat['sort_order']}")
-                        # Check if status exists in the row
-                        if has_status and 'status' in cat.keys():
+                        if has_status:
+                            # Access directly, not with .get()
                             status = cat['status'] if cat['status'] else 'Active'
                             st.write(f"Status: {'🟢 Active' if status == 'Active' else '🔴 Inactive'}")
+                        elif has_is_active:
+                            # Access directly, not with .get()
+                            is_active = cat['is_active'] if cat['is_active'] is not None else 1
+                            st.write(f"Status: {'🟢 Active' if is_active == 1 else '🔴 Inactive'}")
                         else:
                             st.write("Status: 🟢 Active")
                     
@@ -199,7 +300,7 @@ def show_admin():
                         # Count items in this category
                         conn = get_db_connection()
                         cursor = conn.cursor()
-                        cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE category_id = ?", (cat['id'],))
+                        cursor.execute("SELECT COUNT(*) as count FROM master_items WHERE category_id = ?", (cat['id'],))
                         result = cursor.fetchone()
                         conn.close()
                         st.write(f"Items: {result['count'] if result else 0}")
@@ -232,17 +333,7 @@ def show_admin():
                 
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                
-                # Check if status column exists
-                cursor.execute("PRAGMA table_info(categories)")
-                columns = [col[1] for col in cursor.fetchall()]
-                has_status = 'status' in columns
-                
-                if has_status:
-                    cursor.execute("SELECT * FROM categories WHERE id = ?", (cat_id,))
-                else:
-                    cursor.execute("SELECT id, name, sort_order FROM categories WHERE id = ?", (cat_id,))
-                
+                cursor.execute("SELECT * FROM categories WHERE id = ?", (cat_id,))
                 cat = cursor.fetchone()
                 conn.close()
                 
@@ -252,11 +343,27 @@ def show_admin():
                             new_name = st.text_input("Category Name", value=cat['name'])
                             new_sort_order = st.number_input("Sort Order", value=cat['sort_order'])
                             
-                            # Only show status if column exists
+                            # Check available columns for status
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute("PRAGMA table_info(categories)")
+                            columns = [col[1] for col in cursor.fetchall()]
+                            conn.close()
+                            
+                            has_status = 'status' in columns
+                            has_is_active = 'is_active' in columns
+                            
                             if has_status:
+                                # Access directly, not with .get()
                                 current_status = cat['status'] if cat['status'] else 'Active'
                                 new_status = st.selectbox("Status", ["Active", "Inactive"], 
                                                         index=0 if current_status == 'Active' else 1)
+                            elif has_is_active:
+                                # Access directly, not with .get()
+                                current_is_active = cat['is_active'] if cat['is_active'] is not None else 1
+                                new_is_active = st.selectbox("Status", [1, 0], 
+                                                           format_func=lambda x: "Active" if x == 1 else "Inactive",
+                                                           index=0 if current_is_active == 1 else 1)
                             
                             col1, col2 = st.columns(2)
                             with col1:
@@ -265,17 +372,20 @@ def show_admin():
                                         conn = get_db_connection()
                                         cursor = conn.cursor()
                                         
-                                        if has_status:
-                                            cursor.execute(
-                                                "UPDATE categories SET name = ?, sort_order = ?, status = ? WHERE id = ?",
-                                                (new_name, new_sort_order, new_status, cat_id)
-                                            )
-                                        else:
-                                            cursor.execute(
-                                                "UPDATE categories SET name = ?, sort_order = ? WHERE id = ?",
-                                                (new_name, new_sort_order, cat_id)
-                                            )
+                                        update_parts = ["name = ?", "sort_order = ?"]
+                                        params = [new_name, new_sort_order]
                                         
+                                        if has_status:
+                                            update_parts.append("status = ?")
+                                            params.append(new_status)
+                                        elif has_is_active:
+                                            update_parts.append("is_active = ?")
+                                            params.append(new_is_active)
+                                        
+                                        params.append(cat_id)
+                                        query = f"UPDATE categories SET {', '.join(update_parts)} WHERE id = ?"
+                                        
+                                        cursor.execute(query, params)
                                         conn.commit()
                                         conn.close()
                                         st.success("✅ Category updated!")
@@ -290,3 +400,36 @@ def show_admin():
                                     st.rerun()
         else:
             st.info("No categories found. Add your first category!")
+
+# Add this to fix the database schema if needed
+def fix_admin_schema():
+    """Fix missing columns in admin tables"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check and add is_active to categories if missing
+    cursor.execute("PRAGMA table_info(categories)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'is_active' not in columns and 'status' not in columns:
+        try:
+            cursor.execute("ALTER TABLE categories ADD COLUMN is_active INTEGER DEFAULT 1")
+            print("✅ Added is_active column to categories")
+        except Exception as e:
+            print(f"⚠️ Could not add is_active to categories: {e}")
+    
+    # Check and add is_active to master_items if missing
+    cursor.execute("PRAGMA table_info(master_items)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'is_active' not in columns:
+        try:
+            cursor.execute("ALTER TABLE master_items ADD COLUMN is_active INTEGER DEFAULT 1")
+            print("✅ Added is_active column to master_items")
+        except Exception as e:
+            print(f"⚠️ Could not add is_active to master_items: {e}")
+    
+    conn.commit()
+    conn.close()
+
+# Call this function when initializing the database

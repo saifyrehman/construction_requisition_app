@@ -10,6 +10,25 @@ import sqlite3
 import bcrypt
 import io
 
+# app.py - Add this at the top
+from database import initialize_database
+
+# Initialize database once using Streamlit's cache
+@st.cache_resource
+def init_database_once():
+    """Initialize database once and cache the result"""
+    try:
+        initialize_database()
+        return True
+    except Exception as e:
+        st.error(f"Database initialization error: {e}")
+        return False
+
+# Call this at the very beginning of your app
+if not init_database_once():
+    st.error("Failed to initialize database. Please check logs.")
+    st.stop()
+
 # Import from your modules
 from config import *
 from database import (
@@ -39,21 +58,8 @@ from modules.balance import show_balance_statement
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Initialize database on first run
-from database import initialize_database
-try:
-    initialize_database()
-    print("✅ Database initialized successfully")
-except Exception as e:
-    print(f"⚠️ Database initialization warning: {e}")
-
 # Rest of your imports and code...
 from config import *
-
-
-
-# Initialize database
-initialize_database()
 
 # Configure page
 st.set_page_config(
@@ -232,7 +238,6 @@ def display_banner():
         """, unsafe_allow_html=True)
 
 # ==================== MAIN APPLICATION ====================
-# ==================== MAIN APPLICATION ====================
 def main():
     # Load CSS
     load_css()
@@ -298,18 +303,13 @@ def main():
         menu_options.append("🚪 Logout")
         icons.append("box-arrow-right")
         
+        # Use option_menu without styles parameter for compatibility
         selected = option_menu(
             menu_title=None,
             options=menu_options,
             icons=icons,
             menu_icon="cast",
             default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "#fafafa"},
-                "icon": {"color": "orange", "font-size": "18px"},
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin": "0px", "padding": "8px 15px"},
-                "nav-link-selected": {"background-color": "#4CAF50", "color": "white"},
-            }
         )
         
         if selected == "🚪 Logout":
